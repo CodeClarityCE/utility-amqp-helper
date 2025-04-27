@@ -5,7 +5,7 @@ go 1.23.0
 toolchain go1.24.1
 
 require (
-	github.com/CodeClarityCE/utility-types v0.0.3-alpha
+	github.com/CodeClarityCE/utility-types v0.0.5-alpha
 	github.com/rabbitmq/amqp091-go v1.10.0
 )
 
@@ -17,5 +17,5 @@ require (
 	github.com/uptrace/bun v1.2.11 // indirect
 	github.com/vmihailenco/msgpack/v5 v5.4.1 // indirect
 	github.com/vmihailenco/tagparser/v2 v2.0.0 // indirect
-	golang.org/x/sys v0.31.0 // indirect
+	golang.org/x/sys v0.32.0 // indirect
 )
