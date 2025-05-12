@@ -3,7 +3,7 @@ module github.com/CodeClarityCE/utility-amqp-helper
 go 1.24.3
 
 require (
-	github.com/CodeClarityCE/utility-types v0.0.5-alpha
+	github.com/CodeClarityCE/utility-types v0.0.6-alpha
 	github.com/rabbitmq/amqp091-go v1.10.0
 )
 
