@@ -1,5 +1,5 @@
-github.com/CodeClarityCE/utility-types v0.0.6-alpha h1:LQjr0i/Ra490fED7YAaqK6NdgbLZLvWFphDYEgXLt3E=
-github.com/CodeClarityCE/utility-types v0.0.6-alpha/go.mod h1:7ZPgvF9tks3FNQRA3yMdDJTrcCsRidh0owIZwVW2uLM=
+github.com/CodeClarityCE/utility-types v0.0.7-alpha h1:5suuUGxP5pVGo0Rd1+LKSwk7rJgZv38vU/jFj3qxZJE=
+github.com/CodeClarityCE/utility-types v0.0.7-alpha/go.mod h1:XJlCf+F3LtSeC3NmfRjl3rYrNY9Li4RoMFKw859D4w4=
 github.com/davecgh/go-spew v1.1.1 h1:vj9j/u1bqnvCEfJOwUhtlOARqs3+rkHYY13jYWTU97c=
 github.com/davecgh/go-spew v1.1.1/go.mod h1:J7Y8YcW2NihsgmVo/mv3lAwl/skON4iLHjSsI+c5H38=
 github.com/google/uuid v1.6.0 h1:NIvaJDMOsjHA8n1jAhLSgzrAzy1Hgr+hNrb57e+94F0=
@@ -16,8 +16,8 @@ github.com/stretchr/testify v1.10.0 h1:Xv5erBjTwe/5IxqUQTdXv5kgmIvbHo3QQyRwhJsOf
 github.com/stretchr/testify v1.10.0/go.mod h1:r2ic/lqez/lEtzL7wO/rwa5dbSLXVDPFyf8C91i36aY=
 github.com/tmthrgd/go-hex v0.0.0-20190904060850-447a3041c3bc h1:9lRDQMhESg+zvGYmW5DyG0UqvY96Bu5QYsTLvCHdrgo=
 github.com/tmthrgd/go-hex v0.0.0-20190904060850-447a3041c3bc/go.mod h1:bciPuU6GHm1iF1pBvUfxfsH0Wmnc2VbpgvbI9ZWuIRs=
-github.com/uptrace/bun v1.2.11 h1:l9dTymsdZZAoSZ1+Qo3utms0RffgkDbIv+1UGk8N1wQ=
-github.com/uptrace/bun v1.2.11/go.mod h1:ww5G8h59UrOnCHmZ8O1I/4Djc7M/Z3E+EWFS2KLB6dQ=
+github.com/uptrace/bun v1.2.13 h1:tFJjT+mIrogD/mgwwS3lUJmd8Z7M63oZYS1dl6f+23w=
+github.com/uptrace/bun v1.2.13/go.mod h1:ZS4nPaEv2Du3OFqAD/irk3WVP6xTB3/9TWqjJbgKYBU=
 github.com/vmihailenco/msgpack/v5 v5.4.1 h1:cQriyiUvjTwOHg8QZaPihLWeRAAVoCpE00IUPn0Bjt8=
 github.com/vmihailenco/msgpack/v5 v5.4.1/go.mod h1:GaZTsDaehaPpQVyxrf5mtQlH+pc21PIudVV/E3rRQok=
 github.com/vmihailenco/tagparser/v2 v2.0.0 h1:y09buUbR+b5aycVFQs/g70pqKVZNBmxwAhO7/IwNM9g=
