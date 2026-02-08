@@ -1,9 +1,9 @@
 module github.com/CodeClarityCE/utility-amqp-helper
 
-go 1.24.3
+go 1.25.7
 
 require (
-	github.com/CodeClarityCE/utility-types v0.0.15-alpha
+	github.com/CodeClarityCE/utility-types v0.0.19-alpha
 	github.com/rabbitmq/amqp091-go v1.10.0
 )
 
@@ -15,5 +15,5 @@ require (
 	github.com/uptrace/bun v1.2.16 // indirect
 	github.com/vmihailenco/msgpack/v5 v5.4.1 // indirect
 	github.com/vmihailenco/tagparser/v2 v2.0.0 // indirect
-	golang.org/x/sys v0.39.0 // indirect
+	golang.org/x/sys v0.41.0 // indirect
 )
