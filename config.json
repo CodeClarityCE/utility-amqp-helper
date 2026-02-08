@@ -1,6 +1,6 @@
 {
     "name": "amqp-helper",
-    "version": "v0.0.11-alpha",
+    "version": "v0.0.12-alpha",
     "description": "AMQP/RabbitMQ helper utilities for CodeClarity backend services",
     "author": "CodeClarity Team",
     "license": "AGPL-3.0"
