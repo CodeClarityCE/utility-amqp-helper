@@ -2,9 +2,12 @@ package amqp_helper
 
 import (
 	"context"
+	"crypto/tls"
+	"crypto/x509"
 	"fmt"
 	"log"
 	"os"
+	"strings"
 	"sync"
 	"time"
 
@@ -51,9 +54,59 @@ func buildURL() string {
 	return protocol + "://" + user + ":" + password + "@" + host + ":" + port + "/"
 }
 
+// getSSLMode returns the configured AMQP SSL mode from AMQP_SSLMODE, defaulting
+// based on ENV (mirrors the PostgreSQL helper's behaviour).
+func getSSLMode() string {
+	sslMode := os.Getenv("AMQP_SSLMODE")
+	if sslMode != "" {
+		return sslMode
+	}
+	env := os.Getenv("ENV")
+	if env == "prod" || env == "production" {
+		return "verify-ca"
+	}
+	return "disable"
+}
+
+// buildTLSConfig builds a *tls.Config from AMQP_SSLMODE / AMQP_SSLROOTCERT.
+// Returns nil when TLS verification is not required (plain "require" still gets
+// an InsecureSkipVerify config; "disable" returns nil).
+func buildTLSConfig() *tls.Config {
+	switch getSSLMode() {
+	case "require":
+		return &tls.Config{InsecureSkipVerify: true}
+	case "verify-ca", "verify-full":
+		cfg := &tls.Config{}
+		if host := os.Getenv("AMQP_HOST"); host != "" {
+			cfg.ServerName = host
+		}
+		if rootCert := os.Getenv("AMQP_SSLROOTCERT"); rootCert != "" {
+			if caCert, err := os.ReadFile(rootCert); err == nil {
+				pool := x509.NewCertPool()
+				pool.AppendCertsFromPEM(caCert)
+				cfg.RootCAs = pool
+			}
+		}
+		return cfg
+	default:
+		return nil
+	}
+}
+
+// Dial opens an AMQP connection, using TLS when the URL scheme is "amqps".
+// The TLS configuration is derived from AMQP_SSLMODE / AMQP_SSLROOTCERT.
+func Dial(url string) (*amqp.Connection, error) {
+	if strings.HasPrefix(url, "amqps://") {
+		if cfg := buildTLSConfig(); cfg != nil {
+			return amqp.DialTLS(url, cfg)
+		}
+	}
+	return amqp.Dial(url)
+}
+
 // NewClient creates a new Client with a persistent AMQP connection.
 func NewClient(url string) (*Client, error) {
-	conn, err := amqp.Dial(url)
+	conn, err := Dial(url)
 	if err != nil {
 		return nil, fmt.Errorf("failed to connect to RabbitMQ: %w", err)
 	}
@@ -198,7 +251,7 @@ func failOnError(err error, msg string) {
 func Listen(queue string, callback func(args any, config types_plugin.Plugin, message []byte), args any, config types_plugin.Plugin) {
 	url := buildURL()
 
-	conn, err := amqp.Dial(url)
+	conn, err := Dial(url)
 	failOnError(err, "Failed to connect to RabbitMQ")
 	defer conn.Close()
 
