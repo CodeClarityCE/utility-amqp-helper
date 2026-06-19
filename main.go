@@ -305,3 +305,14 @@ func Send(connection string, data []byte) {
 
 	log.Printf(" [x] Sent %s\n", data)
 }
+
+// TrySend behaves like Send but returns any error instead of panicking. Use it for
+// best-effort, fire-and-forget messages (e.g. follow-up notifications) that must not
+// abort the caller when the broker is unavailable.
+func TrySend(connection string, data []byte) error {
+	client, err := getDefaultClient()
+	if err != nil {
+		return err
+	}
+	return client.SendToQueue(connection, data)
+}
