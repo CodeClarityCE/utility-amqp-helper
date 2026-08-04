@@ -246,18 +246,72 @@ func failOnError(err error, msg string) {
 	}
 }
 
+// listenBackoff grows a retry delay, capped at 30s.
+func listenBackoff(backoff time.Duration) time.Duration {
+	if backoff < 30*time.Second {
+		backoff *= 2
+	}
+	return backoff
+}
+
 // Listen starts consuming messages from the given queue. This blocks forever.
-// It maintains its own persistent connection for consuming.
+// It maintains its own persistent connection for consuming, re-subscribing when
+// the broker closes the channel (e.g. consumer_timeout on a delivery parked
+// unacked too long) and re-dialing when the connection itself drops (host
+// sleep/wake, broker restart). Previously either event silently killed the
+// consumer while the process kept running, leaving the queue with zero
+// consumers for the life of the process.
 func Listen(queue string, callback func(args any, config types_plugin.Plugin, message []byte), args any, config types_plugin.Plugin) {
 	url := buildURL()
 
-	conn, err := Dial(url)
-	failOnError(err, "Failed to connect to RabbitMQ")
-	defer conn.Close()
+	backoff := time.Second
+	for {
+		conn, err := Dial(url)
+		if err != nil {
+			log.Printf("[%s] failed to connect to RabbitMQ (%v); retrying in %s", config.Name, err, backoff)
+			time.Sleep(backoff)
+			backoff = listenBackoff(backoff)
+			continue
+		}
 
+		msgs, err := subscribeConsumer(conn, queue)
+		if err != nil {
+			conn.Close()
+			log.Printf("[%s] failed to subscribe to %s (%v); reconnecting in %s", config.Name, queue, err, backoff)
+			time.Sleep(backoff)
+			backoff = listenBackoff(backoff)
+			continue
+		}
+		backoff = time.Second
+
+		log.Printf(" [*] %s Waiting for messages on %s. To exit press CTRL+C", config.Name, queue)
+		consumeDeliveries(conn, queue, msgs, callback, args, config)
+		conn.Close()
+		log.Printf("[%s] RabbitMQ connection lost while consuming %s; re-dialing", config.Name, queue)
+	}
+}
+
+// subscribeConsumer opens a channel on conn, declares the queue, and registers
+// a manual-ack consumer.
+func subscribeConsumer(conn *amqp.Connection, queue string) (<-chan amqp.Delivery, error) {
 	ch, err := conn.Channel()
-	failOnError(err, "Failed to open a channel")
-	defer ch.Close()
+	if err != nil {
+		return nil, fmt.Errorf("failed to open channel: %w", err)
+	}
+
+	// Prefetch exactly one delivery. The consume loop is serial, so a larger
+	// prefetch only parks extra deliveries unacked while earlier ones process;
+	// on long-running queues a parked delivery can exceed RabbitMQ's
+	// consumer_timeout (30 min default), which closes the channel.
+	err = ch.Qos(
+		1,     // prefetch count
+		0,     // prefetch size - 0 means no limit on message size
+		false, // global - apply per consumer
+	)
+	if err != nil {
+		ch.Close()
+		return nil, fmt.Errorf("failed to set QoS: %w", err)
+	}
 
 	q, err := ch.QueueDeclare(
 		queue, // name
@@ -267,28 +321,84 @@ func Listen(queue string, callback func(args any, config types_plugin.Plugin, me
 		false, // no-wait
 		nil,   // arguments
 	)
-	failOnError(err, "Failed to declare a queue")
+	if err != nil {
+		ch.Close()
+		return nil, fmt.Errorf("failed to declare queue: %w", err)
+	}
 
 	msgs, err := ch.Consume(
 		q.Name, // queue
 		"",     // consumer
-		true,   // auto-ack
+		false,  // auto-ack - manual ack so an unprocessed message survives a crash
 		false,  // exclusive
 		false,  // no-local
 		false,  // no-wait
 		nil,    // args
 	)
-	failOnError(err, "Failed to register a consumer")
+	if err != nil {
+		ch.Close()
+		return nil, fmt.Errorf("failed to register consumer: %w", err)
+	}
+	return msgs, nil
+}
 
-	forever := make(chan struct{})
-	go func(callback func(args any, config types_plugin.Plugin, message []byte), args any, config types_plugin.Plugin) {
+// consumeDeliveries drains deliveries serially, acking each after the callback
+// returns. When the broker closes the channel out from under us it re-subscribes
+// with backoff instead of dying; it returns only once the underlying connection
+// reports closed, so the caller can re-dial.
+func consumeDeliveries(conn *amqp.Connection, queue string, msgs <-chan amqp.Delivery, callback func(args any, config types_plugin.Plugin, message []byte), args any, config types_plugin.Plugin) {
+	for {
 		for d := range msgs {
-			callback(args, config, []byte(d.Body))
+			handleDelivery(d, callback, args, config)
 		}
-	}(callback, args, config)
 
-	log.Printf(" [*] %s Waiting for messages on %s. To exit press CTRL+C", config.Name, queue)
-	<-forever
+		// msgs closed: broker- or channel-level failure. If the whole
+		// connection is gone, hand recovery back to Listen's re-dial loop.
+		if conn.IsClosed() {
+			log.Printf("[%s] queue %s consumer stopped (connection closed)", config.Name, queue)
+			return
+		}
+		log.Printf("[%s] queue %s channel closed by broker; re-subscribing", config.Name, queue)
+		backoff := time.Second
+		for {
+			newMsgs, err := subscribeConsumer(conn, queue)
+			if err == nil {
+				msgs = newMsgs
+				log.Printf("[%s] queue %s consumer re-subscribed", config.Name, queue)
+				break
+			}
+			if conn.IsClosed() {
+				log.Printf("[%s] queue %s consumer stopped (connection closed during re-subscribe)", config.Name, queue)
+				return
+			}
+			log.Printf("[%s] queue %s re-subscribe failed (%v); retrying in %s", config.Name, queue, err, backoff)
+			time.Sleep(backoff)
+			backoff = listenBackoff(backoff)
+		}
+	}
+}
+
+// handleDelivery runs the callback and acks the delivery afterwards — even when
+// the callback handled a processing error internally, since callers (plugin_base)
+// record FAILURE and notify the dispatcher themselves, so redelivering would
+// re-run a failed analysis. A panic escaping the callback is nacked instead:
+// requeued once, then dropped, so a poison message can't monopolize the
+// prefetch-1 consumer forever.
+func handleDelivery(d amqp.Delivery, callback func(args any, config types_plugin.Plugin, message []byte), args any, config types_plugin.Plugin) {
+	defer func() {
+		if r := recover(); r != nil {
+			if d.Redelivered {
+				log.Printf("[%s] dropping poison message after redelivery: %v", config.Name, r)
+				d.Nack(false, false) // drop (dead-letter if a DLX is configured)
+			} else {
+				log.Printf("[%s] callback panicked (%v); requeueing message once", config.Name, r)
+				d.Nack(false, true) // first failure: requeue once
+			}
+			return
+		}
+		d.Ack(false)
+	}()
+	callback(args, config, []byte(d.Body))
 }
 
 // Send publishes a message to the given queue using a persistent singleton connection.
