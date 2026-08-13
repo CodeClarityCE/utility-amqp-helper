@@ -125,6 +125,30 @@ func getDefaultClient() (*Client, error) {
 	return defaultClient, defaultClientErr
 }
 
+// ensureConnection re-dials the AMQP connection when it is missing, closed, or
+// when `force` is set. A host sleep/wake kills the TCP connection under the
+// client without IsClosed() necessarily reporting it until the heartbeat times
+// out, so SendToQueue forces a re-dial on its retry attempt after any
+// channel-level failure. All cached channels belong to the old connection and
+// are discarded. Must be called with c.mu held.
+func (c *Client) ensureConnection(force bool) error {
+	if !force && c.conn != nil && !c.conn.IsClosed() {
+		return nil
+	}
+	conn, err := Dial(buildURL())
+	if err != nil {
+		return fmt.Errorf("failed to reconnect to RabbitMQ: %w", err)
+	}
+	if c.conn != nil && !c.conn.IsClosed() {
+		c.conn.Close()
+	}
+	c.conn = conn
+	c.channels = make(map[string]*amqp.Channel)
+	c.declaredQueues = make(map[string]bool)
+	log.Println("AMQP publisher connection re-established")
+	return nil
+}
+
 // getOrCreateChannel returns a cached channel for the queue, or creates a new one.
 // Must be called with c.mu held.
 func (c *Client) getOrCreateChannel(queueName string) (*amqp.Channel, error) {
@@ -179,8 +203,14 @@ func (c *Client) SendToQueue(queueName string, data []byte) error {
 	c.mu.Lock()
 	defer c.mu.Unlock()
 
-	// Try to send, retry once on channel error
+	// Try to send, retry once on channel error. The retry attempt force-re-dials
+	// the connection: a dead channel after host sleep/wake usually means the
+	// whole connection is a zombie, and reopening a channel on it just fails
+	// again with "channel/connection is not open".
 	for attempt := 0; attempt < 2; attempt++ {
+		if err := c.ensureConnection(attempt > 0); err != nil {
+			return err
+		}
 		ch, err := c.getOrCreateChannel(queueName)
 		if err != nil {
 			if attempt == 0 {
