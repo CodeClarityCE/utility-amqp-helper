@@ -207,7 +207,7 @@ func (c *Client) SendToQueue(queueName string, data []byte) error {
 	// the connection: a dead channel after host sleep/wake usually means the
 	// whole connection is a zombie, and reopening a channel on it just fails
 	// again with "channel/connection is not open".
-	for attempt := 0; attempt < 2; attempt++ {
+	for attempt := range 2 {
 		if err := c.ensureConnection(attempt > 0); err != nil {
 			return err
 		}
