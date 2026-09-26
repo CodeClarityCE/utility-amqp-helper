@@ -1,3 +1,25 @@
+// Runs `script` in the pinned Go toolchain instead of whatever the agent host
+// has. Keep the image in sync with the service Dockerfiles and go.mod
+// (go 1.27.1). Plain `docker run` rather than `agent { docker }`, which needs
+// the Docker Pipeline plugin (up for adoption, deliberately not used). The
+// container runs as the Jenkins uid; HOME and the Go caches live in the
+// workspace's @tmp sibling.
+def inGo(String script) {
+    withEnv(["CI_SCRIPT=${script}"]) {
+        sh '''
+            mkdir -p "$WORKSPACE@tmp/ci-home"
+            docker run --rm -u "$(id -u):$(id -g)" \\
+                -v "$WORKSPACE:$WORKSPACE" -v "$WORKSPACE@tmp:$WORKSPACE@tmp" -w "$WORKSPACE" \\
+                -e HOME="$WORKSPACE@tmp/ci-home" \\
+                -e GOCACHE="$WORKSPACE@tmp/go-build" \\
+                -e GOMODCACHE="$WORKSPACE@tmp/go-mod" \\
+                -e GOTOOLCHAIN=local -e GOPRIVATE='github.com/CodeClarityCE/*' \\
+                golang:1.27.1@sha256:3680233e3204827fbdc66088528ae6d4b3d034f51d03a99d454f6de034888244 \\
+                sh -ec "$CI_SCRIPT"
+        '''
+    }
+}
+
 pipeline {
     agent { label 'codeclarity' }
 
@@ -8,21 +30,15 @@ pipeline {
         buildDiscarder(logRotator(numToKeepStr: '10'))
     }
 
-    environment {
-        GOPRIVATE = 'github.com/CodeClarityCE/*'
-    }
-
     stages {
         stage('Setup') {
             steps {
-                sh 'go version'
                 script {
                     def config = readJSON file: 'config.json'
                     env.Version = config.version
                     echo "Version: ${Version}"
                 }
                 sh 'git fetch --tags --force origin'
-                sh 'git fetch origin main:refs/remotes/origin/main || true'
             }
         }
 
@@ -32,42 +48,46 @@ pipeline {
             }
             steps {
                 script {
-                    def configExists = sh(script: "git show origin/main:config.json > /dev/null 2>&1", returnStatus: true) == 0
-                    if (configExists) {
-                        def mainConfigJson = sh(
-                            script: "git show origin/main:config.json",
-                            returnStdout: true
-                        ).trim()
-                        def mainConfig = readJSON text: mainConfigJson
-                        def mainVersion = mainConfig.version
-                        if (Version == mainVersion) {
-                            error "Version not bumped! Current: ${Version}, Main: ${mainVersion}. Please update config.json."
-                        }
-                        echo "Version check passed: ${mainVersion} -> ${Version}"
-                    } else {
-                        echo "No config.json on main branch yet, skipping version check"
+                    // No `|| true`: if main can't be fetched the check must fail,
+                    // not silently skip.
+                    sh 'git fetch --force origin main:refs/remotes/origin/main'
+                    if (sh(script: 'git cat-file -e origin/main:config.json', returnStatus: true) != 0) {
+                        echo 'No config.json on main yet, skipping version check'
+                        return
                     }
+                    def mainVersion = readJSON(text: sh(script: 'git show origin/main:config.json', returnStdout: true)).version
+                    def highest = sh(
+                        script: "printf '%s\\n%s\\n' '${mainVersion}' '${Version}' | sort -V | tail -n1",
+                        returnStdout: true
+                    ).trim()
+                    if (Version == mainVersion || highest != Version) {
+                        error "Version not bumped! PR version (${Version}) must be greater than main version (${mainVersion}). Please update config.json."
+                    }
+                    echo "Version check passed: ${mainVersion} -> ${Version}"
                 }
             }
         }
 
         stage('Dependencies') {
             steps {
-                sh 'go mod download'
-                sh 'go mod tidy'
+                inGo('go mod download')
+                // Fail on an untidy go.mod/go.sum instead of rewriting it.
+                inGo('go mod tidy -diff')
             }
         }
 
         stage('Lint') {
             steps {
-                sh 'go fmt ./...'
-                sh 'go vet ./...'
+                // Fail on unformatted files instead of rewriting them.
+                inGo('test -z "$(gofmt -l .)" || { gofmt -l .; echo "Run gofmt -w on the files above"; exit 1; }')
+                inGo('go vet ./...')
             }
         }
 
         stage('Test') {
             steps {
-                sh 'go test -v ./...'
+                inGo('go test -v ./...')
+                inGo('go run golang.org/x/vuln/cmd/govulncheck@v1.8.0 ./...')
             }
         }
 
@@ -79,7 +99,8 @@ pipeline {
                 script {
                     def tagExists = sh(script: "git tag -l '${Version}' | grep -q .", returnStatus: true) == 0
                     if (!tagExists) {
-                        sh "gh release create '${Version}' --title 'Release ${Version}' --generate-notes --prerelease=\$(echo '${Version}' | grep -q 'alpha\\|beta' && echo true || echo false)"
+                        // --target pins the tag to the commit that was built, not main's tip.
+                        sh "gh release create '${Version}' --target \"\$GIT_COMMIT\" --title 'Release ${Version}' --generate-notes --prerelease=\$(echo '${Version}' | grep -q 'alpha\\|beta' && echo true || echo false)"
                     }
                 }
             }
