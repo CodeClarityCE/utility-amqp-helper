@@ -1,6 +1,6 @@
 // Runs `script` in the pinned Go toolchain instead of whatever the agent host
 // has. Keep the image in sync with the service Dockerfiles and go.mod
-// (go 1.27.1). Plain `docker run` rather than `agent { docker }`, which needs
+// (go 1.27.3). Plain `docker run` rather than `agent { docker }`, which needs
 // the Docker Pipeline plugin (up for adoption, deliberately not used). The
 // container runs as the Jenkins uid; HOME and the Go caches live in the
 // workspace's @tmp sibling.
@@ -14,7 +14,7 @@ def inGo(String script) {
                 -e GOCACHE="$WORKSPACE@tmp/go-build" \\
                 -e GOMODCACHE="$WORKSPACE@tmp/go-mod" \\
                 -e GOTOOLCHAIN=local -e GOPRIVATE='github.com/CodeClarityCE/*' \\
-                golang:1.27.1@sha256:3680233e3204827fbdc66088528ae6d4b3d034f51d03a99d454f6de034888244 \\
+                golang:1.27.3@sha256:2920bb124f1a2e12a1d39f0cab756ae0068441ee1da7655dec7f5e374944095b \\
                 sh -ec "$CI_SCRIPT"
         '''
     }
