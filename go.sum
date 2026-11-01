@@ -1,5 +1,5 @@
-github.com/CodeClarityCE/utility-types v0.0.19-alpha h1:Zc5ejL6hkjyj3xAQuZ8pliN9WQ2Ryf/cTozwBd86+NA=
-github.com/CodeClarityCE/utility-types v0.0.19-alpha/go.mod h1:6PaaxyKugezZVHs/OgR7fgNjz0iADphI8he1MkijtPo=
+github.com/CodeClarityCE/utility-types v0.0.20-alpha h1:mcNxZpLJIgCCE9NUB10cUL7H9vFAXQfe6h/0iVIITMs=
+github.com/CodeClarityCE/utility-types v0.0.20-alpha/go.mod h1:nA1QFNVC5KlQu55ACRs9qpZUaoVS1ff3TP0iXi9oHxs=
 github.com/google/uuid v1.6.0 h1:NIvaJDMOsjHA8n1jAhLSgzrAzy1Hgr+hNrb57e+94F0=
 github.com/google/uuid v1.6.0/go.mod h1:TIyPZe4MgqvfeYDBFedMoGGpEw/LqOeaOT+nhxU+yHo=
 github.com/jinzhu/inflection v1.0.0 h1:K317FqzuhWc8YvSVlFMCCUb36O/S9MCKRDI7QkRKD/E=
