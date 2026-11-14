@@ -1,6 +1,6 @@
 module github.com/CodeClarityCE/utility-amqp-helper
 
-go 1.27.3
+go 1.27.4
 
 require (
 	github.com/CodeClarityCE/utility-types v0.0.20-alpha
