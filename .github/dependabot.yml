@@ -1,0 +1,25 @@
+version: 2
+updates:
+  - package-ecosystem: github-actions
+    directory: /
+    schedule:
+      interval: weekly
+    target-branch: develop
+    cooldown:
+      default-days: 3
+    groups:
+      actions:
+        patterns: ["*"]
+  - package-ecosystem: gomod
+    directory: /
+    schedule:
+      interval: weekly
+    target-branch: develop
+    cooldown:
+      default-days: 3
+    ignore:
+      # Bumped only by the cascading release script.
+      - dependency-name: "github.com/CodeClarityCE/*"
+    groups:
+      go:
+        patterns: ["*"]
