@@ -4,7 +4,7 @@ go 1.27.4
 
 require (
 	github.com/CodeClarityCE/utility-types v0.0.23-alpha
-	github.com/rabbitmq/amqp091-go v1.15.0
+	github.com/rabbitmq/amqp091-go v1.16.0
 )
 
 require (
