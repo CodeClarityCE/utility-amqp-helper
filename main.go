@@ -69,6 +69,9 @@ func getSSLMode() string {
 	return "disable"
 }
 
+// requireModeWarning logs the require-mode warning once per process, not on every dial.
+var requireModeWarning sync.Once
+
 // buildTLSConfig builds a *tls.Config from AMQP_SSLMODE / AMQP_SSLROOTCERT.
 // Returns nil when TLS verification is not required (plain "require" still gets
 // an InsecureSkipVerify config; "disable" returns nil).
@@ -76,8 +79,10 @@ func buildTLSConfig(log logrus.FieldLogger) *tls.Config {
 	switch getSSLMode() {
 	case "require":
 		// require encrypts without checking the certificate, as in libpq.
-		log.WithFields(logrus.Fields{"component": "amqp", "ssl_mode": "require"}).
-			Warn("AMQP TLS does not verify the server certificate in require mode; use verify-ca")
+		requireModeWarning.Do(func() {
+			log.WithFields(logrus.Fields{"component": "amqp", "ssl_mode": "require"}).
+				Warn("AMQP TLS does not verify the server certificate in require mode; use verify-ca")
+		})
 		return &tls.Config{InsecureSkipVerify: true}
 	case "verify-ca", "verify-full":
 		cfg := &tls.Config{}

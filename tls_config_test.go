@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"encoding/json"
 	"strings"
+	"sync"
 	"testing"
 
 	"github.com/sirupsen/logrus"
@@ -24,6 +25,7 @@ func TestBuildTLSConfigWarnsOnlyInRequireMode(t *testing.T) {
 		t.Run(mode, func(t *testing.T) {
 			t.Setenv("AMQP_SSLMODE", mode)
 			t.Setenv("AMQP_HOST", "rabbitmq")
+			requireModeWarning = sync.Once{}
 			var logs bytes.Buffer
 			logger := logrus.New()
 			logger.SetFormatter(&logrus.JSONFormatter{})
@@ -57,6 +59,33 @@ func TestBuildTLSConfigWarnsOnlyInRequireMode(t *testing.T) {
 			}
 			if !strings.Contains(entry["msg"].(string), "verify-ca") {
 				t.Fatalf("warning does not advise verify-ca: %q", entry["msg"])
+			}
+		})
+	}
+}
+
+// Dials an unreachable broker twice per mode and counts warnings on the standard logger.
+func TestDialWarnsOncePerProcessInRequireMode(t *testing.T) {
+	for mode, want := range map[string]int{"require": 1, "verify-ca": 0, "disable": 0} {
+		t.Run(mode, func(t *testing.T) {
+			t.Setenv("AMQP_SSLMODE", mode)
+			t.Setenv("AMQP_HOST", "127.0.0.1")
+			requireModeWarning = sync.Once{}
+			var logs bytes.Buffer
+			std := logrus.StandardLogger()
+			prevOut, prevFmt := std.Out, std.Formatter
+			std.SetOutput(&logs)
+			std.SetFormatter(&logrus.JSONFormatter{})
+			t.Cleanup(func() { std.SetOutput(prevOut); std.SetFormatter(prevFmt) })
+
+			for range 2 {
+				if conn, err := Dial("amqps://guest:guest@127.0.0.1:1/"); err == nil {
+					conn.Close()
+					t.Fatal("dial to a closed port succeeded")
+				}
+			}
+			if got := strings.Count(logs.String(), "require mode"); got != want {
+				t.Fatalf("got %d require-mode warning(s), want %d: %q", got, want, logs.String())
 			}
 		})
 	}
