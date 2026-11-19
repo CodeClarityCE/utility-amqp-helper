@@ -5,6 +5,7 @@ go 1.27.4
 require (
 	github.com/CodeClarityCE/utility-types v0.0.26-alpha
 	github.com/rabbitmq/amqp091-go v1.16.0
+	github.com/sirupsen/logrus v1.10.2
 )
 
 require (

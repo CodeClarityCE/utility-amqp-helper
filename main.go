@@ -13,6 +13,7 @@ import (
 
 	types_plugin "github.com/CodeClarityCE/utility-types/plugin_db"
 	amqp "github.com/rabbitmq/amqp091-go"
+	"github.com/sirupsen/logrus"
 )
 
 // Client maintains a persistent AMQP connection with channel and queue declaration caching.
@@ -71,9 +72,12 @@ func getSSLMode() string {
 // buildTLSConfig builds a *tls.Config from AMQP_SSLMODE / AMQP_SSLROOTCERT.
 // Returns nil when TLS verification is not required (plain "require" still gets
 // an InsecureSkipVerify config; "disable" returns nil).
-func buildTLSConfig() *tls.Config {
+func buildTLSConfig(log logrus.FieldLogger) *tls.Config {
 	switch getSSLMode() {
 	case "require":
+		// require encrypts without checking the certificate, as in libpq.
+		log.WithFields(logrus.Fields{"component": "amqp", "ssl_mode": "require"}).
+			Warn("AMQP TLS does not verify the server certificate in require mode; use verify-ca")
 		return &tls.Config{InsecureSkipVerify: true}
 	case "verify-ca", "verify-full":
 		cfg := &tls.Config{}
@@ -97,7 +101,7 @@ func buildTLSConfig() *tls.Config {
 // The TLS configuration is derived from AMQP_SSLMODE / AMQP_SSLROOTCERT.
 func Dial(url string) (*amqp.Connection, error) {
 	if strings.HasPrefix(url, "amqps://") {
-		if cfg := buildTLSConfig(); cfg != nil {
+		if cfg := buildTLSConfig(logrus.StandardLogger()); cfg != nil {
 			return amqp.DialTLS(url, cfg)
 		}
 	}
