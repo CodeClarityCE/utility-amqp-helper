@@ -20,6 +20,9 @@ updates:
     ignore:
       # Bumped only by the cascading release script.
       - dependency-name: "github.com/CodeClarityCE/*"
+      # bun 1.3.0 mangles escaped backslashes in JSON writes (uptrace/bun#1472); the fix ships after it.
+      - dependency-name: "github.com/uptrace/bun*"
+        versions: ["1.3.0"]
     groups:
       go:
         patterns: ["*"]
