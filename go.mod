@@ -5,6 +5,7 @@ go 1.27.4
 require (
 	github.com/CodeClarityCE/utility-types v0.0.26-alpha
 	github.com/rabbitmq/amqp091-go v1.16.0
+	github.com/sirupsen/logrus v1.10.2
 )
 
 require (
@@ -15,6 +16,5 @@ require (
 	github.com/uptrace/bun v1.2.18 // indirect
 	github.com/vmihailenco/msgpack/v5 v5.4.1 // indirect
 	github.com/vmihailenco/tagparser/v2 v2.0.0 // indirect
-	go.yaml.in/yaml/v3 v3.0.5 // indirect
 	golang.org/x/sys v0.48.0 // indirect
 )
