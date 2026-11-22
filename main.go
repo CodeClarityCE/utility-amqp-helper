@@ -4,6 +4,7 @@ import (
 	"context"
 	"crypto/tls"
 	"crypto/x509"
+	"errors"
 	"fmt"
 	"log"
 	"os"
@@ -83,14 +84,14 @@ func buildTLSConfig(log logrus.FieldLogger) *tls.Config {
 			log.WithFields(logrus.Fields{"component": "amqp", "ssl_mode": "require"}).
 				Warn("AMQP TLS does not verify the server certificate in require mode; use verify-ca")
 		})
-		return &tls.Config{InsecureSkipVerify: true}
+		return &tls.Config{InsecureSkipVerify: true} //nolint:gosec // libpq's require mode: encrypt without verifying, warned above
 	case "verify-ca", "verify-full":
 		cfg := &tls.Config{}
 		if host := os.Getenv("AMQP_HOST"); host != "" {
 			cfg.ServerName = host
 		}
 		if rootCert := os.Getenv("AMQP_SSLROOTCERT"); rootCert != "" {
-			if caCert, err := os.ReadFile(rootCert); err == nil {
+			if caCert, err := os.ReadFile(rootCert); err == nil { //nolint:gosec // CA path set by the operator, like libpq's sslrootcert
 				pool := x509.NewCertPool()
 				pool.AppendCertsFromPEM(caCert)
 				cfg.RootCAs = pool
@@ -149,7 +150,7 @@ func (c *Client) ensureConnection(force bool) error {
 		return fmt.Errorf("failed to reconnect to RabbitMQ: %w", err)
 	}
 	if c.conn != nil && !c.conn.IsClosed() {
-		c.conn.Close()
+		closeLogged("connection", c.conn)
 	}
 	c.conn = conn
 	c.channels = make(map[string]*amqp.Channel)
@@ -200,7 +201,7 @@ func (c *Client) ensureQueueDeclared(ch *amqp.Channel, queueName string) error {
 // Must be called with c.mu held.
 func (c *Client) invalidateChannel(queueName string) {
 	if ch, exists := c.channels[queueName]; exists && ch != nil {
-		ch.Close()
+		closeLogged("channel", ch)
 	}
 	delete(c.channels, queueName)
 	delete(c.declaredQueues, queueName)
@@ -270,12 +271,26 @@ func (c *Client) Close() {
 
 	for name, ch := range c.channels {
 		if ch != nil {
-			ch.Close()
+			closeLogged("channel", ch)
 		}
 		delete(c.channels, name)
 	}
 	if c.conn != nil {
-		c.conn.Close()
+		closeLogged("connection", c.conn)
+	}
+}
+
+// closeLogged closes an AMQP channel or connection, logging a failure other than "already closed".
+func closeLogged(what string, c interface{ Close() error }) {
+	if err := c.Close(); err != nil && !errors.Is(err, amqp.ErrClosed) {
+		logrus.WithFields(logrus.Fields{"component": "amqp", "error": err}).Warnf("failed to close AMQP %s", what)
+	}
+}
+
+// ackLogged logs a failed ack or nack; the broker redelivers the message once the channel closes.
+func ackLogged(plugin, op string, err error) {
+	if err != nil {
+		logrus.WithFields(logrus.Fields{"component": "amqp", "plugin": plugin, "error": err}).Warnf("failed to %s delivery", op)
 	}
 }
 
@@ -315,7 +330,7 @@ func Listen(queue string, callback func(args any, config types_plugin.Plugin, me
 
 		msgs, err := subscribeConsumer(conn, queue)
 		if err != nil {
-			conn.Close()
+			closeLogged("connection", conn)
 			log.Printf("[%s] failed to subscribe to %s (%v); reconnecting in %s", config.Name, queue, err, backoff)
 			time.Sleep(backoff)
 			backoff = listenBackoff(backoff)
@@ -325,7 +340,7 @@ func Listen(queue string, callback func(args any, config types_plugin.Plugin, me
 
 		log.Printf(" [*] %s Waiting for messages on %s. To exit press CTRL+C", config.Name, queue)
 		consumeDeliveries(conn, queue, msgs, callback, args, config)
-		conn.Close()
+		closeLogged("connection", conn)
 		log.Printf("[%s] RabbitMQ connection lost while consuming %s; re-dialing", config.Name, queue)
 	}
 }
@@ -348,7 +363,7 @@ func subscribeConsumer(conn *amqp.Connection, queue string) (<-chan amqp.Deliver
 		false, // global - apply per consumer
 	)
 	if err != nil {
-		ch.Close()
+		closeLogged("channel", ch)
 		return nil, fmt.Errorf("failed to set QoS: %w", err)
 	}
 
@@ -361,7 +376,7 @@ func subscribeConsumer(conn *amqp.Connection, queue string) (<-chan amqp.Deliver
 		nil,   // arguments
 	)
 	if err != nil {
-		ch.Close()
+		closeLogged("channel", ch)
 		return nil, fmt.Errorf("failed to declare queue: %w", err)
 	}
 
@@ -375,7 +390,7 @@ func subscribeConsumer(conn *amqp.Connection, queue string) (<-chan amqp.Deliver
 		nil,    // args
 	)
 	if err != nil {
-		ch.Close()
+		closeLogged("channel", ch)
 		return nil, fmt.Errorf("failed to register consumer: %w", err)
 	}
 	return msgs, nil
@@ -428,14 +443,14 @@ func handleDelivery(d amqp.Delivery, callback func(args any, config types_plugin
 		if r := recover(); r != nil {
 			if d.Redelivered {
 				log.Printf("[%s] dropping poison message after redelivery: %v", config.Name, r)
-				d.Nack(false, false) // drop (dead-letter if a DLX is configured)
+				ackLogged(config.Name, "nack", d.Nack(false, false)) // drop (dead-letter if a DLX is configured)
 			} else {
 				log.Printf("[%s] callback panicked (%v); requeueing message once", config.Name, r)
-				d.Nack(false, true) // first failure: requeue once
+				ackLogged(config.Name, "nack", d.Nack(false, true)) // first failure: requeue once
 			}
 			return
 		}
-		d.Ack(false)
+		ackLogged(config.Name, "ack", d.Ack(false))
 	}()
 	callback(args, config, []byte(d.Body))
 }
