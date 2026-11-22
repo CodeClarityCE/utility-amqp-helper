@@ -80,7 +80,7 @@ func TestDialWarnsOncePerProcessInRequireMode(t *testing.T) {
 
 			for range 2 {
 				if conn, err := Dial("amqps://guest:guest@127.0.0.1:1/"); err == nil {
-					conn.Close()
+					_ = conn.Close()
 					t.Fatal("dial to a closed port succeeded")
 				}
 			}
