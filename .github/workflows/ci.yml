@@ -18,8 +18,6 @@ jobs:
     uses: CodeClarityCE/.github/.github/workflows/go-library.yml@v1
     permissions:
       contents: write # release job only; it runs on main when CI_RELEASE is true
-    with:
-      golangci-lint: true
 
   # The required check, kept here because called jobs show as "go / <job>".
   # Fails if any needed job failed or was cancelled; skipped counts as success.
